@@ -1,0 +1,12 @@
+.env
+data/
+node_modules/
+dist/
+target/
+__pycache__/
+.venv/
+*.log
+使用指南.md
+.screenshots/
+github-workflow-guide/
+.DS_Store

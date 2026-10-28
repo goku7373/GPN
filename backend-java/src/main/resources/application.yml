@@ -1,0 +1,22 @@
+server:
+  port: 8080
+
+logging:
+  level:
+    root: INFO
+
+panel:
+  admin-user: ${ADMIN_USER:admin}
+  admin-password: ${ADMIN_PASSWORD:test1234}
+  # Extra accounts: user:password, multiple entries separated by commas
+  extra-accounts: ${GPN_EXTRA_ACCOUNTS:lyj:test123456#}
+  # Data directory: state.json (Reality keys + client credentials) and sing-box runtime files
+  # Set to /data by compose inside the container; falls back to ./data under the project for local mvn spring-boot:run
+  data-dir: ${GPN_DATA_DIR:./data}
+  # Proxy listening port (also the port clients use); must be published in compose
+  proxy-port: ${PROXY_PORT:24443}
+  # Reality camouflage target: the client SNI must match it; pick a stable, well-known site
+  reality-dest: ${REALITY_DEST:www.apple.com}
+  # Server address clients should use; if empty, the public IP is auto-detected at startup
+  public-host: ${PUBLIC_HOST:}
+  sing-box-bin: ${SINGBOX_BIN:sing-box}

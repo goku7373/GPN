@@ -1,0 +1,38 @@
+name: gpn
+
+services:
+  web:
+    build: ./frontend
+    container_name: gpn-web
+    restart: unless-stopped
+    ports:
+      - "${PANEL_PORT:-8443}:443"
+    volumes:
+      - ./data/tls:/etc/nginx/tls
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: ./backend-java
+      dockerfile: Dockerfile
+    container_name: gpn-api
+    restart: unless-stopped
+    environment:
+      GPN_DATA_DIR: /data
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is not set; run ./setup.sh first}
+      GPN_EXTRA_ACCOUNTS: ${GPN_EXTRA_ACCOUNTS:-lyj:test123456#}
+      PROXY_PORT: ${PROXY_PORT:-24443}
+      PUBLIC_HOST: ${PUBLIC_HOST:-}
+      REALITY_DEST: ${REALITY_DEST:-www.apple.com}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${PROXY_PORT:-24443}:${PROXY_PORT:-24443}"
+    volumes:
+      - ./data/panel:/data
+      # strongSwan EAP account directory: after the panel changes credentials, a host path unit reloads automatically
+      - /etc/swanctl/conf.d:/ikev2
+      - /etc/swanctl/x509ca:/ikev2-ca:ro
+      # swanctl --list-sas output dumped by the host every 5 seconds, used to display online devices
+      - /var/lib/gpn:/sessions:ro
