@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from './api'
 import { useTheme } from './composables/useTheme'
+import OverviewView from './views/OverviewView.vue'
 
 const props = defineProps({ username: { type: String, default: 'admin' } })
 const emit = defineEmits(['logout'])
@@ -22,6 +23,7 @@ const proxy = computed(() => data.value?.proxy || {})
 const server = computed(() => data.value?.server || {})
 const ikev2 = computed(() => data.value?.ikev2 || {})
 const clients = computed(() => data.value?.clients || [])
+
 const TABS = ['overview', 'sessions', 'config', 'logs']
 const CONFIG_TABS = ['server', 'ikev2', 'vless']
 const SESSION_TABS = ['vless', 'ikev2']
@@ -169,8 +171,8 @@ const ovAnalysis = computed(() => {
       tone: ikev2.value.available ? 'i-ok' : 'i-warn',
       tag: ikev2.value.available ? 'Available' : 'Not ready',
       detail: ikev2.value.available
-        ? `Remote ID ${ikev2.value.remoteId || ikev2.value.host || '—'}; system VPN can connect directly.`
-        : 'strongSwan is not ready; system VPN cannot connect.',
+        ? `Remote ID ${ikev2.value.remoteId || ikev2.value.host || '—'}; system GPN can connect directly.`
+        : 'strongSwan is not ready; system GPN cannot connect.',
     },
   ]
 })
@@ -796,16 +798,18 @@ onMounted(async () => {
   document.addEventListener('click', closeMenu)
   if (tab.value === 'sessions') restoreMonitor()
   await load()
+  // Always load sessions once on mount so Overview sees live states immediately
+  loadSessions()
   if (tab.value === 'sessions') {
-    loadSessions()
     if (monitor.value) loadMonitor()
   }
   if (tab.value === 'detail') loadDetail()
   timer = setInterval(async () => {
     try {
       data.value = await api.overview(logLines.value)
+      // Always refresh sessions so Overview client online states stay current
+      loadSessions()
       if (tab.value === 'sessions') {
-        await loadSessions()
         if (monitor.value) await loadMonitor()
       } else if (tab.value === 'detail') {
         await loadDetail()
@@ -847,24 +851,19 @@ onBeforeUnmount(() => {
 
     <div class="body">
       <aside class="side">
-        <div class="side-label">Navigation</div>
         <nav class="nav">
-          <button class="nav-item" :class="{ active: tab === 'overview' }" @click="openTab('overview')">
+          <button class="nav-item" title="Overview" :class="{ active: tab === 'overview' }" @click="openTab('overview')">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
-            <span>Overview</span>
           </button>
-          <button class="nav-item" :class="{ active: tab === 'sessions' }" @click="openTab('sessions')">
+          <button class="nav-item" title="Connections" :class="{ active: tab === 'sessions' }" @click="openTab('sessions')">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8 15.5a6 6 0 0 1 8 0"/><circle cx="12" cy="19" r="1.4"/></svg>
-            <span>Connections</span>
             <span v-if="sessions" class="nav-count">{{ (sessions.vlessCount || 0) + (sessions.ikeCount || 0) }}</span>
           </button>
-          <button class="nav-item" :class="{ active: tab === 'config' }" @click="openTab('config')">
+          <button class="nav-item" title="GPN Settings" :class="{ active: tab === 'config' }" @click="openTab('config')">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
-            <span>VPN Settings</span>
           </button>
-          <button class="nav-item" :class="{ active: tab === 'logs' }" @click="openTab('logs')">
+          <button class="nav-item" title="Logs" :class="{ active: tab === 'logs' }" @click="openTab('logs')">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
-            <span>Logs</span>
           </button>
         </nav>
       </aside>
@@ -901,7 +900,7 @@ onBeforeUnmount(() => {
               </span>
               <span class="chan-body">
                 <span class="chan-name">IKEv2</span>
-                <span class="chan-desc">System VPN · iPhone / macOS</span>
+                <span class="chan-desc">System GPN · iPhone / macOS</span>
               </span>
               <span class="chan-count">{{ sessions ? (sessions.ikeCount || 0) : '—' }}</span>
             </button>
@@ -911,7 +910,7 @@ onBeforeUnmount(() => {
               v-model="searchQuery"
               class="input search"
               type="search"
-              placeholder="Device / public / VPN IP"
+              placeholder="Device / public / GPN IP"
             />
             <div class="tool-group">
               <span class="tool-label">Status</span>
@@ -1104,7 +1103,7 @@ onBeforeUnmount(() => {
                   <p v-if="auditRows.length > 10" class="hint">Showing top 10 by count; {{ auditRows.length - 10 }} more destinations not listed.</p>
                 </template>
               </template>
-              <p class="hint">Destinations come from the server kernel's connection tracking (conntrack) of assigned VPN IPs, updated about every 3 seconds; entries disappear when connections close.</p>
+              <p class="hint">Destinations come from the server kernel's connection tracking (conntrack) of assigned GPN IPs, updated about every 3 seconds; entries disappear when connections close.</p>
             </template>
 
             <template v-else-if="sessionTab === 'vless'">
@@ -1156,7 +1155,7 @@ onBeforeUnmount(() => {
                 </p>
                 <table v-else class="tbl">
                   <thead><tr>
-                    <th>Device</th><th>Status</th><th>Public IP</th><th>Region</th><th>VPN IP</th>
+                    <th>Device</th><th>Status</th><th>Public IP</th><th>Region</th><th>GPN IP</th>
                     <th>Connected</th><th>Rate</th><th class="th-act"></th>
                   </tr></thead>
                   <tbody>
@@ -1272,7 +1271,7 @@ onBeforeUnmount(() => {
               </span>
               <span class="chan-body">
                 <span class="chan-name">IKEv2 Setup</span>
-                <span class="chan-desc">System VPN · Profiles</span>
+                <span class="chan-desc">System GPN · Profiles</span>
               </span>
             </button>
             <button
@@ -1321,7 +1320,7 @@ onBeforeUnmount(() => {
               <li>Add a client under "VLESS Setup" to get its dedicated credentials.</li>
               <li>Copy the client's <b>VLESS link</b> or <b>subscription URL</b>.</li>
               <li>Import into a client: sing-box / v2rayN / Shadowrocket / NekoBox all recognize links or subscriptions directly.</li>
-              <li>For iPhone system VPN, use the profiles under "IKEv2 Setup" instead.</li>
+              <li>For iPhone system GPN, use the profiles under "IKEv2 Setup" instead.</li>
             </ol>
             <p class="hint">All exit traffic is sent by this server's sing-box; clients need no extra routing config.</p>
           </section>
@@ -1330,13 +1329,13 @@ onBeforeUnmount(() => {
         <template v-else-if="configTab === 'ikev2'">
           <section v-if="ikev2.available" class="card">
             <header class="card-head">
-              <h2>iPhone Native VPN (IKEv2)</h2>
+              <h2>iPhone Native GPN (IKEv2)</h2>
               <a class="chip" :href="ikev2.caPath">Download CA Cert</a>
             </header>
             <ol class="steps">
-              <li>On the iPhone, tap "Install Profile" for the device. After Safari downloads it, go to Settings → Downloaded Profile → Install and enter the lock-screen passcode — the VPN and CA certificate are installed together.</li>
+              <li>On the iPhone, tap "Install Profile" for the device. After Safari downloads it, go to Settings → Downloaded Profile → Install and enter the lock-screen passcode — the GPN and CA certificate are installed together.</li>
               <li>Then go to Settings → General → About → Certificate Trust Settings and enable <b>GPN Zero Trust CA</b>.</li>
-              <li>Select <b>GPN VPN</b> under Settings → General → VPN & Device Management → VPN and turn it on.</li>
+              <li>Select <b>GPN</b> under Settings → General → VPN & Device Management → VPN and turn it on.</li>
               <li>Or configure manually: type IKEv2, set both Server and Remote ID to <span class="mono">{{ ikev2.host }}</span>, leave Local ID empty, choose "Username" authentication — credentials are listed below.</li>
             </ol>
             <ul class="client-list ike-list">
@@ -1354,7 +1353,7 @@ onBeforeUnmount(() => {
                 </div>
               </li>
             </ul>
-            <p class="hint">The profile already includes the CA certificate and credentials — it works right after installation. If manual entry reports "Unable to store VPN configuration", a field is usually missing or the phone has no lock-screen passcode; using the profile is the most reliable option.</p>
+            <p class="hint">The profile already includes the CA certificate and credentials — it works right after installation. If manual entry reports "Unable to store GPN configuration", a field is usually missing or the phone has no lock-screen passcode; using the profile is the most reliable option.</p>
           </section>
           <section v-else class="card">
             <p class="empty muted">IKEv2 is not deployed, or the container has not mounted /etc/swanctl.</p>
@@ -1512,82 +1511,13 @@ onBeforeUnmount(() => {
       <p v-if="proxy.error" class="alert alert-warn">{{ proxy.error }}</p>
       <p v-if="loading" class="muted">Loading status…</p>
 
-      <section v-else class="ov">
-        <div class="ov-hero">
-          <header class="ov-head">
-            <div>
-              <p class="ov-kicker">Overview</p>
-              <h2>Overview</h2>
-              <p class="ov-sub">Full chain · Clients → Entry → Exit → Internet</p>
-            </div>
-            <span class="badge" :class="proxy.running ? 'badge-ok' : 'badge-danger'">
-              {{ proxy.running ? 'Exit Running' : 'Exit Stopped' }}
-            </span>
-          </header>
-
-          <div class="ov-stage">
-            <div class="ov-canvas">
-              <svg class="ov-mesh" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                <path v-for="(d, i) in ovSegments" :key="`base-${i}`" :d="d" class="ov-link" />
-                <path
-                  v-for="(d, i) in ovSegments" :key="`flow-${i}`" :d="d" class="ov-flow"
-                  :style="{ animationDelay: `-${(i % 3) * 0.9}s` }"
-                />
-              </svg>
-
-              <div class="ov-core" :style="{ left: `${OV_CORE.x}%`, top: `${OV_CORE.y}%` }">
-                <span class="ov-core-orb" aria-hidden="true"><i></i></span>
-                <span class="ov-core-text">
-                  <strong>Exit Node</strong>
-                  <small>{{ proxy.running ? formatUptime(proxy.uptimeMs) : 'Stopped' }}</small>
-                </span>
-              </div>
-
-              <div
-                v-for="n in ovNodes"
-                :key="n.key"
-                class="ov-node"
-                :style="{ left: `${n.x}%`, top: `${n.y}%` }"
-              >
-                <span class="ov-orb" aria-hidden="true"><i></i></span>
-                <span class="ov-node-text">
-                  <strong>{{ n.label }}</strong>
-                  <small>{{ n.sub }}</small>
-                </span>
-              </div>
-            </div>
-
-            <aside class="ov-panel">
-              <header class="ov-panel-head">
-                <span>Insights</span>
-                <span class="ov-panel-tag">Live</span>
-              </header>
-              <div v-for="item in ovAnalysis" :key="item.title" class="ov-item" :class="item.tone">
-                <div class="ov-item-head">
-                  <i class="ov-item-mark" aria-hidden="true"></i>
-                  <strong>{{ item.title }}</strong>
-                  <span class="ov-item-tag">{{ item.tag }}</span>
-                </div>
-                <p>{{ item.detail }}</p>
-              </div>
-            </aside>
-          </div>
-
-          <div class="ov-dock">
-            <div v-for="m in ovMetrics" :key="m.label" class="ov-metric">
-              <span class="ov-metric-label">{{ m.label }}</span>
-              <strong>{{ m.value }}</strong>
-              <span v-if="m.pct !== null" class="ov-mini" aria-hidden="true">
-                <i :style="{ width: `${m.pct}%` }"></i>
-              </span>
-            </div>
-            <div class="ov-dock-actions">
-              <button class="btn btn-sm" :disabled="busyId === 'proxy'" @click="restart">Restart Exit</button>
-              <button class="btn btn-sm btn-primary" @click="openTab('sessions')">Connections</button>
-            </div>
-          </div>
-        </div>
-      </section>
+      <OverviewView
+        v-else
+        :clients="clients"
+        :sessions="sessions"
+        :proxy="proxy"
+        :server="server"
+      />
       </template>
       </main>
     </div>
@@ -1599,84 +1529,87 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.page { min-height: 100dvh; display: flex; flex-direction: column; }
+.page { min-height: 100dvh; display: flex; flex-direction: column; position: relative; z-index: 1; }
 .top {
   display: flex; align-items: center; justify-content: space-between;
-  gap: var(--space-4); padding: var(--space-4) var(--space-6);
-  border-bottom: 1px solid var(--color-border-muted);
+  gap: var(--space-3); padding: 10px var(--space-5);
+  background: var(--color-bg);
+  border-bottom: 0;
+  position: relative; z-index: 10;
 }
-.brand { display: flex; align-items: center; gap: var(--space-3); }
+.brand { display: flex; align-items: center; gap: var(--space-2); }
 .logo {
-  width: 36px; height: 36px; border-radius: var(--radius-md);
+  width: 28px; height: 28px; border-radius: var(--radius-md);
   display: grid; place-items: center; flex-shrink: 0;
-  background: var(--color-text); color: var(--color-surface);
-  font-size: 18px; font-weight: 800;
+  background: var(--color-accent); color: var(--color-text-on-accent);
+  font-size: 15px; font-weight: 800;
+  box-shadow: 0 2px 8px var(--color-accent-sub);
 }
-h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.2px; }
+h1 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -0.2px; }
 .brand p { margin: 2px 0 0; font-size: 11px; }
 .top-actions { display: flex; align-items: center; gap: var(--space-2); }
 .user { font-size: 12px; color: var(--color-text-muted); padding: 0 var(--space-1); }
 
-.body { flex: 1; display: flex; align-items: stretch; min-height: 0; }
+.body { flex: 1; display: flex; align-items: stretch; min-height: 0; position: relative; }
 .side {
-  width: 204px; flex-shrink: 0;
-  padding: var(--space-5) var(--space-3);
-  background: var(--color-surface-sub);
-}
-.side-label {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
-  text-transform: uppercase; color: var(--color-text-subtle);
-  padding: 0 12px var(--space-2);
+  position: fixed;
+  left: 50%; bottom: 20px;
+  transform: translateX(-50%);
+  background: transparent; border: 0; padding: 0; z-index: 10;
+  pointer-events: none;
 }
 .nav {
-  display: flex; flex-direction: column; gap: 2px;
-  position: sticky; top: var(--space-5);
+  display: flex; flex-direction: row; gap: 6px;
+  pointer-events: auto;
 }
 .nav-item {
-  appearance: none; background: none; border: 0; cursor: pointer;
-  padding: 9px 11px; border-radius: var(--radius-sm);
-  font: inherit; font-size: 13px; color: var(--color-text-muted);
-  display: flex; align-items: center; gap: 10px;
-  text-align: left; width: 100%;
-  transition: background 0.15s ease, color 0.15s ease;
+  appearance: none; background: transparent; border: 0; cursor: pointer;
+  width: 36px; height: 36px; padding: 0; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-text-muted); position: relative;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
 }
 .nav-item svg {
-  width: 16px; height: 16px; flex-shrink: 0;
-  fill: none; stroke: currentColor; stroke-width: 1.7;
+  width: 18px; height: 18px; flex-shrink: 0;
+  fill: none; stroke: currentColor; stroke-width: 1.8;
   stroke-linecap: round; stroke-linejoin: round;
-  opacity: 0.7;
+  opacity: 0.65; transition: opacity 0.18s ease;
 }
-.nav-item:hover { color: var(--color-text); background: var(--color-surface); }
+.nav-item:hover {
+  color: var(--color-text); background: var(--color-surface-sub);
+  transform: translateX(2px);
+}
 .nav-item:hover svg { opacity: 1; }
 .nav-item.active {
-  color: var(--color-accent); font-weight: 600;
-  background: var(--color-surface);
+  color: var(--color-accent); background: var(--color-surface);
   box-shadow: var(--shadow-xs);
 }
 .nav-item.active svg { opacity: 1; }
 .nav-count {
-  margin-left: auto;
-  font-size: 11px; line-height: 1; padding: 3px 7px; border-radius: 999px;
-  font-variant-numeric: tabular-nums;
-  background: var(--color-accent-sub); color: var(--color-accent);
+  position: absolute; top: -3px; right: -3px;
+  min-width: 16px; height: 16px;
+  font-size: 9px; line-height: 16px; text-align: center;
+  padding: 0 4px; border-radius: 999px;
+  font-variant-numeric: tabular-nums; font-weight: 700;
+  background: var(--color-accent); color: #000;
+  border: 2px solid var(--color-bg);
 }
 
 @media (max-width: 720px) {
   .body { flex-direction: column; }
   .side {
-    width: auto; border-right: 0; border-bottom: 1px solid var(--color-border-muted);
+    position: static; transform: none;
     padding: var(--space-2) var(--space-4);
     background: transparent;
+    pointer-events: auto;
   }
-  .side-label { display: none; }
   .nav { flex-direction: row; position: static; gap: var(--space-1); }
-  .nav-item { width: auto; }
   .nav-item.active { box-shadow: none; }
 }
 .tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
 .tbl th, .tbl td {
   text-align: left; padding: 8px 10px;
-  border-bottom: 1px solid var(--color-border-muted);
+  border-bottom: 0;
 }
 .tbl th { color: var(--color-text-muted); font-weight: 500; font-size: 11px; }
 .tbl td.ellipsis { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1824,169 +1757,17 @@ tr.row-offline td { color: var(--color-text-muted); }
 
 .main {
   flex: 1; width: 100%; max-width: none; margin: 0;
-  padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4);
+  padding: 0; display: flex; flex-direction: column; gap: 0;
 }
-.config-page, .sessions-page { display: flex; flex-direction: column; gap: var(--space-4); }
+.config-page, .sessions-page, .logs-page {
+  display: flex; flex-direction: column; gap: var(--space-4);
+  padding: var(--space-6);
+}
 .page-head {
   display: flex; align-items: center; justify-content: flex-start;
   gap: var(--space-3); flex-wrap: wrap;
 }
 .page-head.between { justify-content: space-between; }
-/* ---------- Overview: topology view (follows theme variables) ---------- */
-.ov { flex: 1; display: flex; min-height: 0; }
-.ov-hero {
-  flex: 1; display: flex; flex-direction: column; gap: 12px;
-  min-height: 420px;
-  padding: 0;
-  border: 0;
-  background: none;
-  box-shadow: none;
-}
-
-.ov-stage { flex: 1; display: flex; gap: 16px; min-height: 0; }
-.ov-canvas { position: relative; flex: 1; min-width: 0; min-height: 340px; }
-
-.ov-mesh { position: absolute; inset: 0; width: 100%; height: 100%; }
-.ov-link {
-  fill: none; stroke: var(--color-accent); stroke-opacity: .18; stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-.ov-flow {
-  fill: none; stroke: var(--color-accent); stroke-width: 2; stroke-linecap: round;
-  vector-effect: non-scaling-stroke; stroke-dasharray: .8 7;
-  animation: ov-dash 2.6s linear infinite;
-}
-@keyframes ov-dash { to { stroke-dashoffset: -7.8; } }
-
-.ov-head {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
-}
-.ov-kicker {
-  margin: 0; font-size: 9px; letter-spacing: 2.4px; text-transform: uppercase;
-  color: var(--color-text-subtle);
-}
-.ov-head h2 {
-  margin: 2px 0 0; font-size: 20px; font-weight: 600; letter-spacing: .3px;
-  color: var(--color-text);
-}
-.ov-sub { margin: 3px 0 0; font-size: 11px; color: var(--color-text-muted); }
-
-.ov-core {
-  position: absolute; z-index: 2; transform: translate(-50%, -50%);
-  display: flex; align-items: center; gap: 13px;
-}
-.ov-core-orb {
-  position: relative; width: 22px; height: 22px; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fff, var(--color-accent) 68%);
-  box-shadow: 0 0 14px var(--color-accent-sub), 0 0 0 4px var(--color-accent-sub);
-}
-.ov-core-orb i {
-  position: absolute; inset: -17px; border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
-  animation: ov-ring 3.8s ease-out infinite;
-}
-@keyframes ov-ring {
-  0% { transform: scale(.72); opacity: .8; }
-  100% { transform: scale(1.15); opacity: 0; }
-}
-.ov-core-text { display: flex; flex-direction: column; gap: 1px; }
-.ov-core-text strong { font-size: 12px; color: var(--color-text); letter-spacing: .2px; }
-.ov-core-text small { font-size: 10px; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
-
-.ov-node {
-  position: absolute; z-index: 2; transform: translate(-50%, -50%);
-  display: flex; align-items: center; gap: 8px; white-space: nowrap;
-}
-.ov-orb {
-  width: 12px; height: 12px; border-radius: 50%; flex: none;
-  display: grid; place-items: center;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-shadow: 0 0 0 3px var(--color-accent-sub);
-}
-.ov-orb i { width: 5px; height: 5px; border-radius: 50%; background: var(--color-accent); }
-.ov-node-text { display: flex; flex-direction: column; gap: 1px; }
-.ov-node-text strong { font-size: 11px; font-weight: 600; color: var(--color-text); }
-.ov-node-text small { font-size: 9.5px; color: var(--color-text-subtle); font-variant-numeric: tabular-nums; }
-
-.ov-panel {
-  flex: none; width: 320px; align-self: stretch; overflow: auto;
-  padding: 10px 12px 12px;
-  border-radius: var(--radius-md);
-  background: var(--glass-bg-strong);
-  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-md);
-}
-.ov-panel-head {
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: 9.5px; letter-spacing: 1.6px; text-transform: uppercase;
-  color: var(--color-text-subtle);
-}
-.ov-panel-tag {
-  padding: 1px 6px; border-radius: 6px; letter-spacing: .6px;
-  background: var(--color-accent-sub); color: var(--color-accent);
-}
-.ov-item {
-  position: relative; overflow: hidden; margin-top: 8px;
-  padding: 7px 10px 8px; border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-text) 4%, transparent);
-  --tint: var(--color-success-sub);
-}
-.ov-item.i-warn { --tint: var(--color-warning-sub); }
-.ov-item.i-bad { --tint: var(--color-danger-sub); }
-.ov-item::before {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(90deg, var(--tint), transparent 72%);
-}
-.ov-item-head { position: relative; display: flex; align-items: center; gap: 6px; }
-.ov-item-mark { width: 2px; height: 11px; border-radius: 2px; background: var(--color-success); }
-.ov-item.i-warn .ov-item-mark { background: var(--color-warning); }
-.ov-item.i-bad .ov-item-mark { background: var(--color-danger); }
-.ov-item-head strong { font-size: 11px; font-weight: 500; color: var(--color-text); }
-.ov-item-tag {
-  margin-left: auto; font-size: 9.5px; color: var(--color-text-subtle);
-  font-variant-numeric: tabular-nums;
-}
-.ov-item p {
-  position: relative; margin: 4px 0 0 8px; font-size: 10.5px; line-height: 1.5;
-  color: var(--color-text-muted);
-}
-
-.ov-dock {
-  display: flex; align-items: center; gap: 24px; padding: 9px 14px;
-  border-radius: var(--radius-md);
-  background: var(--glass-bg-strong);
-  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-sm);
-}
-.ov-metric { display: flex; flex-direction: column; gap: 3px; }
-.ov-metric-label {
-  font-size: 8.5px; letter-spacing: 1.2px; text-transform: uppercase;
-  color: var(--color-text-subtle);
-}
-.ov-metric strong { font-size: 13px; font-weight: 600; color: var(--color-text); font-variant-numeric: tabular-nums; }
-.ov-mini {
-  width: 46px; height: 3px; border-radius: 3px; overflow: hidden;
-  background: color-mix(in srgb, var(--color-text) 12%, transparent);
-}
-.ov-mini i {
-  display: block; height: 100%; border-radius: 3px;
-  background: linear-gradient(90deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 55%, #fff));
-}
-.ov-dock-actions { margin-left: auto; display: flex; gap: 8px; flex: none; }
-
-@media (max-width: 980px) {
-  .ov-hero { min-height: 0; }
-  .ov-stage { flex-direction: column; }
-  .ov-canvas { min-height: 300px; }
-  .ov-panel { width: auto; align-self: auto; }
-  .ov-dock { flex-wrap: wrap; gap: 16px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ov-flow, .ov-core-orb i { animation: none; }
-}
 
 .cols { display: grid; grid-template-columns: 1.15fr 1fr; gap: var(--space-4); }
 @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
@@ -2068,8 +1849,9 @@ a.chip { text-decoration: none; display: inline-block; }
 /* Connection type switch: two channel cards with icons and live counts */
 .chan-tabs {
   display: inline-flex; gap: 6px; padding: 5px;
-  background: var(--color-surface-sub);
+  background: transparent;
   border-radius: var(--radius-md);
+  border: 0;
 }
 .chan {
   appearance: none; cursor: pointer; font: inherit; text-align: left;
@@ -2080,12 +1862,12 @@ a.chip { text-decoration: none; display: inline-block; }
   transition: background .18s ease, color .18s ease,
               box-shadow .18s ease, border-color .18s ease;
 }
-.chan:hover { background: var(--color-surface); color: var(--color-text); }
+.chan:hover { background: var(--color-surface-sub); color: var(--color-text); }
 .chan-icon {
   width: 30px; height: 30px; flex-shrink: 0;
   display: grid; place-items: center;
   border-radius: var(--radius-xs);
-  background: var(--color-surface); color: var(--color-text-subtle);
+  background: var(--color-surface-sub); color: var(--color-text-subtle);
   transition: background .18s ease, color .18s ease;
 }
 .chan-icon svg {
@@ -2099,17 +1881,17 @@ a.chip { text-decoration: none; display: inline-block; }
 .chan-count {
   min-width: 28px; margin-left: 4px; padding: 3px 8px;
   border-radius: var(--radius-pill);
-  background: var(--color-surface); color: var(--color-text-muted);
+  background: var(--color-surface-sub); color: var(--color-text-muted);
   font-size: 11px; font-weight: 700; line-height: 1.3;
   font-variant-numeric: tabular-nums; text-align: center;
   transition: background .18s ease, color .18s ease;
 }
 .chan.active {
   background: var(--color-surface); color: var(--color-text);
-  border-color: var(--color-border-muted); box-shadow: var(--shadow-sm);
+  border-color: var(--color-border); box-shadow: var(--shadow-sm);
 }
 .chan.active .chan-icon { background: var(--color-accent-sub); color: var(--color-accent); }
-.chan.active .chan-count { background: var(--color-accent); color: #fff; }
+.chan.active .chan-count { background: var(--color-accent); color: var(--color-text-on-accent); }
 
 @media (max-width: 720px) {
   .chan-tabs { width: 100%; }
@@ -2120,15 +1902,19 @@ a.chip { text-decoration: none; display: inline-block; }
 .log-box {
   margin: 0; padding: var(--space-4);
   font-family: var(--font-mono); font-size: 11px; line-height: 1.7;
-  color: var(--color-text-muted); background: var(--color-surface-sub);
+  color: var(--color-text-muted);
+  background: var(--color-surface-sub);
   border-radius: var(--radius-sm); max-height: 62vh; overflow: auto;
   white-space: pre-wrap; word-break: break-all;
+  border: 1px solid var(--color-border);
 }
 
 .toast {
   position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%);
   padding: 7px 16px; border-radius: var(--radius-pill);
-  background: var(--color-text); color: var(--color-surface);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
   font-size: 12px; z-index: 30;
 }
 .fade-enter-active, .fade-leave-active { transition: opacity .2s ease, transform .2s ease; }
@@ -2166,16 +1952,16 @@ a.chip { text-decoration: none; display: inline-block; }
   min-height: 34px;
   padding: 3px 11px;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--hue) 7%, var(--color-surface));
-  border: 1px solid color-mix(in srgb, var(--hue) 22%, transparent);
+  background: color-mix(in srgb, var(--hue) 7%, var(--color-surface-sub));
+  border: 1px solid color-mix(in srgb, var(--hue) 22%, var(--color-border));
   box-shadow: var(--shadow-xs);
   white-space: nowrap;
 }
 /* Each of the four chain segments uses its own hue: client blue / proxy purple / server orange / exit green */
-.route-node.c1 { --hue: #4f7cff; }
-.route-node.c2 { --hue: #8b5cf6; }
-.route-node.c3 { --hue: #e8963a; }
-.route-node.c4 { --hue: #12b981; }
+.route-node.c1 { --hue: var(--color-route-1); }
+.route-node.c2 { --hue: var(--color-route-2); }
+.route-node.c3 { --hue: var(--color-route-3); }
+.route-node.c4 { --hue: var(--color-route-4); }
 .route-ico {
   width: 15px; height: 15px; flex: none;
   fill: none; stroke: currentColor; stroke-width: 1.7;
@@ -2195,9 +1981,9 @@ a.chip { text-decoration: none; display: inline-block; }
 .route-node.c4 .route-text strong { color: var(--hue); }
 
 /* Connecting line: thin gradient line + arrow + flowing dot */
-.route-arrow { position: relative; flex: 0 0 32px; height: 16px; --hue: #4f7cff; }
-.route-arrow:nth-of-type(4) { --hue: #8b5cf6; }
-.route-arrow:nth-of-type(6) { --hue: #e8963a; }
+.route-arrow { position: relative; flex: 0 0 32px; height: 16px; --hue: var(--color-route-1); }
+.route-arrow:nth-of-type(4) { --hue: var(--color-route-2); }
+.route-arrow:nth-of-type(6) { --hue: var(--color-route-3); }
 .route-arrow::before {
   content: ""; position: absolute; left: 3px; right: 8px; top: 50%;
   height: 1px;
@@ -2251,8 +2037,8 @@ a.chip { text-decoration: none; display: inline-block; }
 }
 .mon-tbl tbody tr:hover td { background: var(--color-surface-sub); }
 /* Upload orange, download green for quick distinction */
-.rate-up { color: #e8963a; }
-.rate-down { color: #12b981; }
+.rate-up { color: var(--color-rate-up); }
+.rate-down { color: var(--color-rate-down); }
 .rate-sep { color: var(--color-text-subtle); margin: 0 2px; }
 
 /* Traffic audit: summary stat cards + top destinations bar ranking */

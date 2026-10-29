@@ -2,33 +2,33 @@ import { ref, watch } from 'vue'
 
 /**
  * Light/dark theme switching
- * - Prefer the value the user manually set in localStorage
- * - Otherwise follow the system prefers-color-scheme
- * - On switch, set <html data-theme="light|dark">
+ * - Default: dark
+ * - Manual toggle persists in localStorage
+ * - apply(m) always sets data-theme so CSS variables respond instantly
  */
 
 const KEY = 'gpn.theme'
-const THEME = { LIGHT: 'light', DARK: 'dark', AUTO: 'auto' }
+const THEME = { LIGHT: 'light', DARK: 'dark' }
 
-const saved = localStorage.getItem(KEY) || THEME.AUTO
-const mode = ref(saved)
+// Default to dark unless user explicitly chose light before
+const saved = localStorage.getItem(KEY) || THEME.DARK
+const mode = ref(saved === THEME.LIGHT ? THEME.LIGHT : THEME.DARK)
 
 function apply(m) {
-  const isDark = m === THEME.DARK ||
-    (m === THEME.AUTO && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  document.documentElement.setAttribute('data-theme', isDark ? THEME.DARK : THEME.LIGHT)
-  // Keep theme.css @media working — only let @media take effect in auto mode
-  if (m === THEME.AUTO) {
-    document.documentElement.removeAttribute('data-theme')
-  }
+  document.documentElement.setAttribute('data-theme', m === THEME.DARK ? THEME.DARK : THEME.LIGHT)
 }
 
 apply(mode.value)
 
-// Watch for system changes (in auto mode)
+// Watch for system changes only when user hasn't explicitly chosen
 if (window.matchMedia) {
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    if (mode.value === THEME.AUTO) apply(mode.value)
+  const mql = window.matchMedia('(prefers-color-scheme: dark)')
+  mql.addEventListener('change', (e) => {
+    const manual = localStorage.getItem(KEY)
+    if (!manual) {
+      mode.value = e.matches ? THEME.DARK : THEME.LIGHT
+      apply(mode.value)
+    }
   })
 }
 
@@ -39,7 +39,7 @@ export function useTheme() {
     apply(m)
   }
   function toggle() {
-    setMode(mode.value === THEME.LIGHT ? THEME.DARK : THEME.LIGHT)
+    setMode(mode.value === THEME.DARK ? THEME.LIGHT : THEME.DARK)
   }
   return { mode: mode, THEME, setMode, toggle }
 }
